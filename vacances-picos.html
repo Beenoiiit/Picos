@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vacances Picos de Europa</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { color-scheme: light }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f5f0eb; color: #222; }
+  h1 { text-align: center; padding: 12px; font-size: 1.15rem; background: #2d5a27; color: white; letter-spacing: 1px; }
+  #map { width: 100%; height: calc(100vh - 108px); }
+  #legend {
+    background: white;
+    padding: 8px 14px;
+    font-size: 0.76rem;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+    border-top: 2px solid #ddd;
+    height: 52px;
+  }
+  .leg { display: flex; align-items: center; gap: 5px; }
+  .leg-dash { width: 28px; height: 0; border-top: 3px dashed; }
+  .leg-solid { width: 28px; height: 3px; border-radius: 2px; }
+  .leg-dot { width: 13px; height: 13px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+  #status { position: absolute; bottom: 58px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.92); padding: 5px 10px; border-radius: 6px; font-size: 0.75rem; color: #555; display:none; }
+</style>
+</head>
+<body>
+<h1>🏔️ Picos de Europa — Juin 2026</h1>
+<div style="position:relative;">
+  <div id="map"></div>
+  <div id="status">⏳ Calcul des itinéraires routiers…</div>
+</div>
+<div id="legend">
+  <span style="font-weight:bold;">Légende :</span>
+  <div class="leg"><div class="leg-dot" style="background:#c0392b;"></div> Nuit</div>
+  <div class="leg"><div class="leg-dot" style="background:#e67e22;"></div> Étape</div>
+  <div class="leg"><div class="leg-dot" style="background:#2980b9;"></div> Visite côte</div>
+  <div class="leg"><div class="leg-dash" style="border-color:#1a6fcc;"></div> Voiture</div>
+  <div class="leg"><div class="leg-solid" style="background:#e8630a;"></div> Rando</div>
+</div>
+
+<script>
+const map = L.map('map').setView([43.2, -4.85], 10);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  maxZoom: 19,
+  attribution: '© OpenStreetMap · © CartoDB'
+}).addTo(map);
+
+// ── OSRM routing ──────────────────────────────────────────────────────────────
+async function getRoute(waypoints) {
+  const coords = waypoints.map(w => w[1] + ',' + w[0]).join(';');
+  const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    if (d.routes && d.routes[0]) return d.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+  } catch(e) {}
+  return waypoints; // fallback
+}
+
+// ── Markers ────────────────────────────────────────────────────────────────────
+function makeIcon(color, emoji, size=20) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;font-size:${size*0.5}px;">${emoji||''}</div>`,
+    iconSize: [size,size], iconAnchor: [size/2,size/2]
+  });
+}
+function labelIcon(txt) {
+  return L.divIcon({
+    className: '',
+    html: `<div style="background:rgba(255,255,255,0.88);border:1px solid #bbb;border-radius:4px;padding:2px 5px;font-size:10px;font-weight:bold;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);">${txt}</div>`,
+    iconSize: [1,1], iconAnchor: [-4, 8]
+  });
+}
+
+function addMarker(coords, color, emoji, title, dateStr, info, size, link) {
+  const m = L.marker(coords, { icon: makeIcon(color, emoji, size||20) }).addTo(map);
+  const linkHtml = link ? `<div style="margin-top:8px;"><a href="${link}" target="_blank" style="display:inline-block;background:#e8630a;color:white;padding:4px 10px;border-radius:12px;font-size:0.78rem;text-decoration:none;font-weight:bold;">🗺 Voir sur Komoot</a></div>` : '';
+  m.bindPopup(`<div style="min-width:180px;max-width:260px;">
+    <div style="font-weight:bold;font-size:1rem;margin-bottom:3px;">${title}</div>
+    <div style="color:#888;font-size:0.8rem;margin-bottom:6px;">📅 ${dateStr}</div>
+    <div style="font-size:0.87rem;line-height:1.5;white-space:pre-line;">${info}</div>
+    ${linkHtml}
+  </div>`, {maxWidth:270});
+  return m;
+}
+
+// ── Lieux principaux (coordonnées vérifiées) ──────────────────────────────────
+
+// Rando 1 — départ Parking Buferrera / Lago Enol (voiture laissée là)
+const buferrera     = [43.276879, -4.986047]; // Parking Buferrera [CTA 16728] — départ Rando 1
+const casaPastores  = [43.268730, -4.998189]; // Refugio Vega de Enol (Casa de Pastores) — nuit 1
+const vegarredonda  = [43.234362, -4.992793]; // Refugio Vegarredonda, 1460m — nuit 2
+const vegaArio      = [43.243022, -4.923002]; // Refugio Vega de Ario, 1630m — nuit 3
+
+// Valdeón
+const valdeon       = [43.15076, -4.91955]; // Hotel Cumbres de Valdeón, Cam. a Soto km 14 (OSM N4993149284)
+const cainValeon    = [43.213138, -4.905037]; // Caín, Bo. Abajo-Cn 53 — départ Rando 2 (voiture laissée là)
+
+// Las Arenas
+const lasArenas     = [43.3034, -4.8147]; // Las Arenas, 33554 Cabrales
+
+// Rando 3 — départ ET voiture laissée à Puente La Jaya
+const puenteJaya    = [43.254409, -4.836868]; // Puente La Jaya — parking + départ Rando 3
+const bulnes        = [43.234623, -4.817178]; // Bulnes (La Villa) — étape 1 & 6
+const terenosa      = [43.227084, -4.792737]; // Refugio Terenosa — étape 2 — nuit
+const urriellu      = [43.202757, -4.821477]; // Refuge Vega de Urriellu — étape 4
+
+// Côte
+const llanes        = [43.4197, -4.7558];
+const sanVicente    = [43.3908, -4.3930];
+const noja          = [43.4825, -3.5430];
+
+const K1 = 'https://www.komoot.com/fr-fr/tour/2950840852?share_token=aIXSeQ5zpNmURq0GrTix7dawfI97hyv0YVnKng8SSXpcIJpbri&ref=wtd';
+const K2 = 'https://www.komoot.com/fr-fr/tour/2950954245?share_token=aH2jU6ALHZsX4zKFKlYmzTOV1XkZuUgfut8WGeNWFq9KZJ8OM4&ref=wtd';
+const K3 = 'https://www.komoot.com/fr-fr/tour/3003379963?share_token=asUCVrFDiSFitHI78La6t1dfJB1YNAKZHSrR5e8v7Hhrnov1zw&ref=wtd';
+
+// ── Marker nuit : icône + label nom + dates intégrés ──────────────────────────
+function gmaps(query) {
+  return `https://www.google.com/maps/search/${encodeURIComponent(query)}`;
+}
+
+function addNuit(coords, name, dates, info, komoot, mapsQuery) {
+  const datesHtml = dates.map(d => `<div style="color:#666;font-size:9px;line-height:1.4;">${d}</div>`).join('');
+  // Icône : petite maison SVG rouge, sobre
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="display:flex;align-items:flex-start;gap:5px;">
+      <div style="width:20px;height:20px;flex-shrink:0;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.4));">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 3L2 12h3v9h6v-5h2v5h6v-9h3z" fill="#c0392b" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div style="background:rgba(255,255,255,0.95);border:1px solid #ccc;border-radius:4px;padding:2px 6px;box-shadow:0 1px 3px rgba(0,0,0,0.15);min-width:80px;">
+        <div style="font-size:10px;font-weight:700;color:#222;white-space:nowrap;">${name}</div>
+        ${datesHtml}
+      </div>
+    </div>`,
+    iconSize: [1,1], iconAnchor: [10,10]
+  });
+  const mapsUrl = gmaps(mapsQuery || name);
+  const mapsHtml = `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+    <a href="${mapsUrl}" target="_blank" style="display:inline-block;background:#4285f4;color:white;padding:4px 10px;border-radius:12px;font-size:0.78rem;text-decoration:none;font-weight:bold;">📍 Google Maps</a>
+    ${komoot ? `<a href="${komoot}" target="_blank" style="display:inline-block;background:#e8630a;color:white;padding:4px 10px;border-radius:12px;font-size:0.78rem;text-decoration:none;font-weight:bold;">🗺 Komoot</a>` : ''}
+  </div>`;
+  L.marker(coords, { icon }).addTo(map).bindPopup(`<div style="min-width:180px;max-width:260px;">
+    <div style="font-weight:bold;font-size:1rem;margin-bottom:3px;">${name}</div>
+    <div style="color:#888;font-size:0.8rem;margin-bottom:6px;">📅 ${dates.join(' · ')}</div>
+    <div style="font-size:0.87rem;line-height:1.5;white-space:pre-line;">${info}</div>
+    ${mapsHtml}
+  </div>`, {maxWidth:280});
+}
+
+// Nuits
+addNuit(casaPastores, 'Casa de Pastores', ['Lun 13 juin'],
+  'Vega de Enol s/n, 33556 Cangas de Onís · 1 070 m\n🥾 Marche depuis Buferrera', K1,
+  'Refugio Vega de Enol Casa de Pastores Cangas de Onis');
+addNuit(vegarredonda, 'Vegarredonda', ['Mar 14 juin'],
+  '1 460 m · Picos de Europa\n🥾 Depuis Casa de Pastores', K1,
+  'Refugio Vegarredonda Picos de Europa Asturias');
+addNuit(vegaArio, 'Vega de Ario', ['Mer 15 juin'],
+  '1 630 m · Onís, Asturias\n🥾 Depuis Vegarredonda', K1,
+  'Refugio Vega de Ario Onis Asturias');
+addNuit(valdeon, 'Hotel Cumbres de Valdeón', ['Jeu 16 juin'],
+  'Cam. a Soto km 14, Posada de Valdeón, León\n🚗 ~2h depuis Buferrera', null,
+  'Hotel Cumbres de Valdeón Posada de Valdeón León');
+addNuit(lasArenas, 'Las Arenas', ['Ven 17 juin', 'Sam 18 juin'],
+  '33554 Cabrales, Asturias\n🚗 ~2h depuis Caín · Week-end libre.', null,
+  'Las Arenas de Cabrales Asturias');
+addNuit(terenosa, 'Terenosa', ['Dim 19 juin'],
+  '1 300 m · Picos de Europa\n🥾 6,5 km depuis Puente La Jaya', K3,
+  'Refugio Terenosa Picos de Europa');
+addNuit(llanes, 'Llanes', ['Lun 20 juin', 'Mar 21 juin'],
+  'Côte cantabrique · Asturias', null,
+  'Llanes Asturias');
+addNuit(sanVicente, 'San Vicente de la Barquera', ['Mer 22 juin', 'Jeu 23 juin'],
+  'Côte cantabrique · Cantabria', null,
+  'San Vicente de la Barquera Cantabria');
+addNuit(noja, 'Noja', ['Ven 24 juin', 'Sam 25 juin'],
+  'Côte cantabrique · Cantabria', null,
+  'Noja Cantabria');
+
+// Étapes intermédiaires
+addMarker(urriellu, '#e67e22', '⛰️', 'Refuge Vega de Urriellu',
+  'Dim 19 juin — étape', 'Naranjo de Bulnes · ~2 000 m\n🥾 11 km depuis Puente La Jaya', 16, K3);
+addMarker(bulnes, '#e67e22', '🏘️', 'Bulnes (La Villa)',
+  'Dim 19 juin — étape', 'Étape Rando 3 · Belvédère Naranjo de Bulnes à proximité.', 16);
+
+// Triangles départ (sans numéro)
+function addDepart(coords, label, info, link) {
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-bottom:22px solid #27ae60;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.45));"></div>`,
+    iconSize: [24, 22], iconAnchor: [12, 22]
+  });
+  const linkHtml = `<div style="margin-top:8px;"><a href="${link}" target="_blank" style="display:inline-block;background:#27ae60;color:white;padding:4px 10px;border-radius:12px;font-size:0.78rem;text-decoration:none;font-weight:bold;">🗺 Voir sur Komoot</a></div>`;
+  L.marker(coords, { icon }).addTo(map).bindPopup(`<div style="min-width:190px;max-width:270px;">
+    <div style="font-weight:bold;font-size:1rem;margin-bottom:3px;">▲ ${label}</div>
+    <div style="font-size:0.87rem;line-height:1.5;white-space:pre-line;">${info}</div>
+    ${linkHtml}
+  </div>`, {maxWidth:280});
+}
+addDepart(buferrera,  'Départ Rando 1 — Parking Buferrera',
+  'Lagos de Covadonga [CTA 16728], Cangas de Onís\nBoucle 3 jours · Buferrera → Casa Pastores → Vegarredonda → Vega de Ario', K1);
+addDepart(cainValeon, 'Départ Rando 2 — Caín de Valdeón',
+  'Bo. Abajo-Cn 53, 24915 Caín de Valdeón, León\nBoucle gorges du Cares · 6,86 km · +670/-680 m · 4h', K2);
+addDepart(puenteJaya, 'Départ Rando 3 — Puente La Jaya',
+  'Río Cares, Asturias · Voiture laissée ici\nBoucle 19,7 km · +1 750 m · 10h17', K3);
+
+// Labels parkings seulement
+[
+  [buferrera,  '🅿 R1'],
+  [cainValeon, '🅿 R2'],
+  [puenteJaya, '🅿 R3'],
+].forEach(([c,t]) => L.marker(c, {icon: labelIcon(t), interactive:false}).addTo(map));
+
+// ── RANDO 1 — Buferrera → Casa Pastores → Vegarredonda → Vega de Ario → retour
+const rando1 = [
+  [43.276879, -4.986047], // A — Parking Buferrera
+  [43.268730, -4.998189], // 1 — Casa de Pastores (nuit 1)
+  [43.234362, -4.992793], // 2 — Refugio Vegarredonda (nuit 2)
+  [43.243022, -4.923002], // 3 — Refugio Vega de Ario (nuit 3)
+  [43.276879, -4.986047], // B — retour Buferrera
+];
+L.polyline(rando1, { color:'#e8630a', weight:4, opacity:1 }).addTo(map)
+  .bindTooltip('🥾 Rando 1 — Buferrera · Casa Pastores · Vegarredonda · Vega de Ario (3 jours)');
+
+// ── RANDO 2 — Boucle gorges du Cares depuis Caín ─────────────────────────────
+// D'après image Komoot : départ Caín → montée boucle ouest haute → descente gorges
+const rando2 = [
+  [43.213138, -4.905037], // A — Caín Bo. Abajo
+  [43.216000, -4.913000], // montée plein ouest
+  [43.222000, -4.921000],
+  [43.228000, -4.926000],
+  [43.233000, -4.921000], // boucle nord-ouest haute
+  [43.236000, -4.912000],
+  [43.234000, -4.904000],
+  [43.231000, -4.898000],
+  [43.227340, -4.894720], // 1 — point nord-est (La Tranvía)
+  [43.222000, -4.895000], // descente gorges est
+  [43.218000, -4.897000],
+  [43.215000, -4.900000],
+  [43.213138, -4.905037], // B — retour Caín
+];
+L.polyline(rando2, { color:'#e8630a', weight:4, opacity:1 }).addTo(map)
+  .bindTooltip('🥾 Rando 2 — Gorges du Cares · 6,86 km · +670 m / -680 m · 4h');
+
+
+// ── RANDO 3 — Puente La Jaya → Bulnes → Terenosa → Urriellu → retour ─────────
+// Départ Puente La Jaya (255m) → Canal du Texu → Bulnes (3,6km) → Terenosa (6,5km)
+// → Camino Urriellu (9,1km) → Refuge Urriellu (11km) → retour Bulnes (16km) → Puente La Jaya
+const rando3 = [
+  [43.254409, -4.836868], // A — Puente La Jaya (départ)
+  [43.234623, -4.817178], // 1 — Vue Naranjo depuis mirador / Bulnes de Arriba
+  [43.227084, -4.792737], // 2 — Refugio La Terenosa
+  [43.213600, -4.812100], // 3 — Camino La Terenosa - Urriellu
+  [43.202757, -4.821477], // 4 — Refuge Vega de Urriellu
+  [43.235317, -4.819803], // 5 — Point de passage #5
+  [43.234623, -4.817178], // 6 — Bulnes (Le village)
+  [43.254409, -4.836868], // B — retour Puente La Jaya
+];
+L.polyline(rando3, { color:'#e8630a', weight:4, opacity:1 }).addTo(map)
+  .bindTooltip('🥾 Rando 3 — Puente La Jaya · Bulnes · Terenosa · Urriellu (19,7 km · +1 750 m · 10h)');
+
+// ── ROUTES VOITURE via OSRM ───────────────────────────────────────────────────
+const carStyle = { color:'#1a6fcc', weight:4, opacity:0.9, dashArray:'12 6' };
+
+const status = document.getElementById('status');
+status.style.display = 'block';
+
+async function drawRoute(waypoints, tooltip, style) {
+  const coords = waypoints.map(w => w[1]+','+w[0]).join(';');
+  const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    if (d.routes && d.routes[0]) {
+      const latlngs = d.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+      L.polyline(latlngs, style||carStyle).addTo(map).bindTooltip(tooltip);
+      return;
+    }
+  } catch(e) {}
+  // fallback ligne droite
+  L.polyline(waypoints, {...(style||carStyle), dashArray:'5 5', opacity:0.4}).addTo(map).bindTooltip(tooltip + ' (approx)');
+}
+
+Promise.all([
+  // J1 lundi soir : arrivée Parking Buferrera via Cangas de Onís / CO-4
+  drawRoute([[43.3487, -5.1291], buferrera], '🚗 J1 · Arrivée Parking Buferrera — Lagos Covadonga'),
+  // J4 jeudi soir : Buferrera → Hotel Cumbres de Valdeón (fin rando 1, ≈2h)
+  drawRoute([buferrera, valdeon], '🚗 J4 · Buferrera → Hotel Cumbres de Valdeón (≈2h)'),
+  // J5 matin : Hotel Valdeón → Caín de Valdeón (départ rando 2)
+  drawRoute([valdeon, cainValeon], '🚗 J5 matin · Hotel Valdeón → Caín de Valdeón'),
+  // J5 soir : Caín → Las Arenas de Cabrales (fin rando 2, ≈2h)
+  drawRoute([cainValeon, lasArenas], '🚗 J5 soir · Caín → Las Arenas de Cabrales (≈2h)'),
+  // J7 dimanche : Las Arenas → Puente La Jaya (voiture laissée là, départ rando 3)
+  drawRoute([lasArenas, puenteJaya], '🚗 J7 · Las Arenas → Puente La Jaya'),
+  // J8 lundi retour côte : Puente La Jaya → Llanes → San Vicente → Noja
+  drawRoute([puenteJaya, llanes], '🚗 J8 · Puente La Jaya → Llanes'),
+  drawRoute([llanes, sanVicente], '🚗 Côte · Llanes → San Vicente de la Barquera'),
+  drawRoute([sanVicente, noja], '🚗 Côte · San Vicente → Noja (ven 24)'),
+]).then(() => { status.style.display = 'none'; });
+
+// Fit bounds
+map.fitBounds([[43.07,-5.02],[43.52,-3.50]]);
+</script>
+</body>
+</html>
