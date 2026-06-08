@@ -9,303 +9,408 @@
 <style>
   :root { color-scheme: light }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: 'Segoe UI', sans-serif; background: #f5f0eb; color: #222; }
-  h1 { text-align: center; padding: 12px; font-size: 1.15rem; background: #2d5a27; color: white; letter-spacing: 1px; }
-  #map { width: 100%; height: calc(100vh - 108px); }
-  #legend {
-    background: white;
-    padding: 8px 14px;
-    font-size: 0.76rem;
-    display: flex;
-    gap: 16px;
-    align-items: center;
-    flex-wrap: wrap;
-    border-top: 2px solid #ddd;
-    height: 52px;
+  body { font-family: 'Segoe UI', sans-serif; background: #f5f0eb; }
+  h1 { text-align: center; padding: 10px; font-size: 1.1rem; background: #2d5a27; color: white; letter-spacing: 1px; }
+  #map { width: 100%; height: calc(100vh - 90px); }
+
+  #controls {
+    position: absolute;
+    bottom: 44px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex; align-items: center; gap: 10px;
+    background: rgba(255,255,255,0.96);
+    border-radius: 30px;
+    padding: 7px 16px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.25);
   }
-  .leg { display: flex; align-items: center; gap: 5px; }
-  .leg-dash { width: 28px; height: 0; border-top: 3px dashed; }
-  .leg-solid { width: 28px; height: 3px; border-radius: 2px; }
-  .leg-dot { width: 13px; height: 13px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
-  #status { position: absolute; bottom: 58px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.92); padding: 5px 10px; border-radius: 6px; font-size: 0.75rem; color: #555; display:none; }
+  #nextBtn, #prevBtn {
+    padding: 6px 14px; border-radius: 20px; border: none;
+    background: #2d5a27; color: white; font-size: 0.85rem;
+    font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  #nextBtn:hover, #prevBtn:hover { background: #3a7a34; }
+  #nextBtn:disabled, #prevBtn:disabled { background: #aaa; cursor: default; }
+  #resetBtn {
+    background: none; border: none; cursor: pointer;
+    font-size: 1rem; color: #888;
+  }
+  #resetBtn:hover { color: #333; }
+  #dayLabel {
+    font-size: 0.82rem; font-weight: 600; color: #333;
+    min-width: 220px; text-align: center;
+  }
+  #progress { width: 100px; height: 4px; background: #ddd; border-radius: 2px; overflow: hidden; }
+  #progressBar { height: 100%; background: #2d5a27; border-radius: 2px; transition: width 0.4s; width: 0%; }
+
+  #footer {
+    background: white; border-top: 2px solid #ddd;
+    padding: 4px 14px; font-size: 0.72rem;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap; height: 34px;
+  }
+  .leg { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+  .linev { width: 22px; height: 3px; border-radius: 2px; }
 </style>
 </head>
 <body>
-<h1>🏔️ Picos de Europa — Juin 2026</h1>
+<h1>🏔️ Picos de Europa — Juillet 2026</h1>
 <div style="position:relative;">
   <div id="map"></div>
-  <div id="status">⏳ Calcul des itinéraires routiers…</div>
+  <div id="controls">
+    <button id="prevBtn">◀</button>
+    <button id="nextBtn">▶ Jour suivant</button>
+    <div id="dayLabel">Clic pour démarrer le voyage</div>
+    <div id="progress"><div id="progressBar"></div></div>
+    <button id="resetBtn" title="Recommencer">↺</button>
+  </div>
 </div>
-<div id="legend">
+<div id="footer">
   <span style="font-weight:bold;">Légende :</span>
-  <div class="leg"><div class="leg-dot" style="background:#c0392b;"></div> Nuit</div>
-  <div class="leg"><div class="leg-dot" style="background:#e67e22;"></div> Étape rando</div>
-  <div class="leg"><div class="leg-dash" style="border-color:#1a6fcc;"></div> Voiture</div>
-  <div class="leg"><div class="leg-solid" style="background:#e8630a;"></div> Rando</div>
+  <div class="leg"><div class="dot" style="background:#c0392b;"></div> Nuit</div>
+  <div class="leg"><div class="linev" style="background:#e8630a;"></div> Rando</div>
+  <div class="leg"><div class="linev" style="background:#888;"></div> Voiture</div>
 </div>
 
 <script>
-const map = L.map('map').setView([43.25, -4.85], 10);
-L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-  maxZoom: 19,
-  attribution: '© OpenStreetMap · © CartoDB'
-}).addTo(map);
+const map = L.map('map').setView([43.25,-4.85], 10);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+  {maxZoom:19, attribution:'© OpenStreetMap · © CartoDB'}).addTo(map);
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
-function gmaps(query) {
-  return `https://www.google.com/maps/search/${encodeURIComponent(query)}`;
+function gmaps(q) { return `https://www.google.com/maps/search/${encodeURIComponent(q)}`; }
+
+function nuitIcon(name, dates) {
+  const dh = dates.map(d=>`<div style="color:#666;font-size:9px;line-height:1.4;">${d}</div>`).join('');
+  return L.divIcon({ className:'', iconSize:[1,1], iconAnchor:[9,9],
+    html:`<div style="display:flex;align-items:flex-start;gap:4px;">
+      <div style="width:18px;height:18px;flex-shrink:0;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.4));">
+        <svg viewBox="0 0 24 24"><path d="M12 3L2 12h3v9h6v-5h2v5h6v-9h3z" fill="#c0392b" stroke="white" stroke-width="1.5" stroke-linejoin="round"/></svg>
+      </div>
+      <div style="background:rgba(255,255,255,0.95);border:1px solid #ccc;border-radius:4px;padding:2px 5px;box-shadow:0 1px 3px rgba(0,0,0,0.15);min-width:70px;">
+        <div style="font-size:9px;font-weight:700;color:#222;white-space:nowrap;">${name}</div>${dh}
+      </div></div>`});
+}
+
+function departIcon() {
+  return L.divIcon({ className:'', iconSize:[20,18], iconAnchor:[10,18],
+    html:`<div style="width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:18px solid #27ae60;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4));"></div>`});
 }
 
 function labelIcon(txt) {
-  return L.divIcon({
-    className: '',
-    html: `<div style="background:rgba(255,255,255,0.88);border:1px solid #bbb;border-radius:4px;padding:2px 5px;font-size:10px;font-weight:bold;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);">${txt}</div>`,
-    iconSize: [1,1], iconAnchor: [-4, 8]
-  });
+  return L.divIcon({ className:'', iconSize:[1,1], iconAnchor:[-4,8],
+    html:`<div style="background:rgba(255,255,255,0.88);border:1px solid #bbb;border-radius:4px;padding:2px 5px;font-size:10px;font-weight:bold;white-space:nowrap;box-shadow:0 1px 3px rgba(0,0,0,0.15);">${txt}</div>`});
 }
 
-// ── Nuit marker : maison SVG rouge + nom + dates ───────────────────────────────
-function addNuit(coords, name, dates, info, komoot, mapsQuery) {
-  const datesHtml = dates.map(d => `<div style="color:#666;font-size:9px;line-height:1.4;">${d}</div>`).join('');
-  const icon = L.divIcon({
-    className: '',
-    html: `<div style="display:flex;align-items:flex-start;gap:5px;">
-      <div style="width:20px;height:20px;flex-shrink:0;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.4));">
-        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 3L2 12h3v9h6v-5h2v5h6v-9h3z" fill="#c0392b" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <div style="background:rgba(255,255,255,0.95);border:1px solid #ccc;border-radius:4px;padding:2px 6px;box-shadow:0 1px 3px rgba(0,0,0,0.15);min-width:80px;">
-        <div style="font-size:10px;font-weight:700;color:#222;white-space:nowrap;">${name}</div>
-        ${datesHtml}
-      </div>
-    </div>`,
-    iconSize: [1,1], iconAnchor: [10,10]
-  });
-  const mapsUrl = gmaps(mapsQuery || name);
-  const mapsHtml = `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
-    <a href="${mapsUrl}" target="_blank" style="display:inline-block;background:#4285f4;color:white;padding:4px 10px;border-radius:12px;font-size:0.78rem;text-decoration:none;font-weight:bold;">📍 Google Maps</a>
-    ${komoot ? `<a href="${komoot}" target="_blank" style="display:inline-block;background:#e8630a;color:white;padding:4px 10px;border-radius:12px;font-size:0.78rem;text-decoration:none;font-weight:bold;">🗺 Komoot</a>` : ''}
-  </div>`;
-  L.marker(coords, { icon }).addTo(map).bindPopup(`<div style="min-width:180px;max-width:260px;">
-    <div style="font-weight:bold;font-size:1rem;margin-bottom:3px;">${name}</div>
-    <div style="color:#888;font-size:0.8rem;margin-bottom:6px;">📅 ${dates.join(' · ')}</div>
-    <div style="font-size:0.87rem;line-height:1.5;white-space:pre-line;">${info}</div>
-    ${mapsHtml}
-  </div>`, {maxWidth:280});
+function statIcon(txt) {
+  return L.divIcon({ className:'', iconSize:[1,1], iconAnchor:[40,10],
+    html:`<div style="background:rgba(255,255,255,0.92);border:1px solid #e8630a;border-radius:5px;padding:3px 7px;font-size:9.5px;font-weight:600;color:#333;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,0.2);line-height:1.5;">${txt}</div>`});
 }
 
-// ── Étape intermédiaire (point orange) — Maps + Komoot optionnel ───────────────
-function addEtape(coords, title, dateStr, info, mapsUrl, komoot) {
-  const icon = L.divIcon({
-    className: '',
-    html: `<div style="width:16px;height:16px;border-radius:50%;background:#e67e22;border:2px solid white;box-shadow:0 2px 5px rgba(0,0,0,0.35);"></div>`,
-    iconSize: [16,16], iconAnchor: [8,8]
-  });
-  const btns = `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
-    ${mapsUrl ? `<a href="${mapsUrl}" target="_blank" style="display:inline-block;background:#4285f4;color:white;padding:4px 10px;border-radius:12px;font-size:0.78rem;text-decoration:none;font-weight:bold;">📍 Google Maps</a>` : ''}
-    ${komoot  ? `<a href="${komoot}"  target="_blank" style="display:inline-block;background:#e8630a;color:white;padding:4px 10px;border-radius:12px;font-size:0.78rem;text-decoration:none;font-weight:bold;">🗺 Komoot</a>` : ''}
-  </div>`;
-  L.marker(coords, { icon }).addTo(map).bindPopup(`<div style="min-width:180px;max-width:260px;">
-    <div style="font-weight:bold;font-size:1rem;margin-bottom:3px;">${title}</div>
-    <div style="color:#888;font-size:0.8rem;margin-bottom:6px;">📅 ${dateStr}</div>
-    <div style="font-size:0.87rem;line-height:1.5;white-space:pre-line;">${info}</div>
-    ${btns}
-  </div>`, {maxWidth:280});
-}
-
-// ── Départ rando (triangle vert) — Maps + Komoot optionnel ────────────────────
-function addDepart(coords, label, info, mapsUrl, komoot) {
-  const icon = L.divIcon({
-    className: '',
-    html: `<div style="width:0;height:0;border-left:12px solid transparent;border-right:12px solid transparent;border-bottom:22px solid #27ae60;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.45));"></div>`,
-    iconSize: [24, 22], iconAnchor: [12, 22]
-  });
-  const btns = `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
-    ${mapsUrl ? `<a href="${mapsUrl}" target="_blank" style="display:inline-block;background:#4285f4;color:white;padding:4px 10px;border-radius:12px;font-size:0.78rem;text-decoration:none;font-weight:bold;">📍 Google Maps</a>` : ''}
-    ${komoot  ? `<a href="${komoot}"  target="_blank" style="display:inline-block;background:#27ae60;color:white;padding:4px 10px;border-radius:12px;font-size:0.78rem;text-decoration:none;font-weight:bold;">🗺 Komoot</a>` : ''}
-  </div>`;
-  L.marker(coords, { icon }).addTo(map).bindPopup(`<div style="min-width:190px;max-width:270px;">
-    <div style="font-weight:bold;font-size:1rem;margin-bottom:3px;">▲ ${label}</div>
-    <div style="font-size:0.87rem;line-height:1.5;white-space:pre-line;">${info}</div>
-    ${btns}
-  </div>`, {maxWidth:280});
+function mkPopup(title, date, info, mapsQ, komoot) {
+  return `<div style="min-width:170px;max-width:250px;">
+    <div style="font-weight:bold;font-size:0.95rem;margin-bottom:2px;">${title}</div>
+    ${date?`<div style="color:#888;font-size:0.78rem;margin-bottom:5px;">📅 ${date}</div>`:''}
+    <div style="font-size:0.85rem;line-height:1.5;white-space:pre-line;">${info}</div>
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+      ${mapsQ?`<a href="${gmaps(mapsQ)}" target="_blank" style="background:#4285f4;color:white;padding:3px 9px;border-radius:10px;font-size:0.75rem;text-decoration:none;font-weight:bold;">📍 Maps</a>`:''}
+      ${komoot?`<a href="${komoot}" target="_blank" style="background:#e8630a;color:white;padding:3px 9px;border-radius:10px;font-size:0.75rem;text-decoration:none;font-weight:bold;">🗺 Komoot</a>`:''}
+    </div></div>`;
 }
 
 // ── COORDONNÉES ────────────────────────────────────────────────────────────────
-
-// Nuit 1 — Hotel Cumbres de Valdeón (lundi)
-const valdeon       = [43.15076, -4.91955];
-
-// Nuit 2 — Hotel El Trasgu, La Venta, Cangas de Onís (mardi)
-const elTrasgu      = [43.34832, -5.09053];
-
-// Stop lundi — Pozas Termales del Río Deva, La Hermida, Cantabria
-const devaTermal    = [43.197, -4.607];
-
-// Rando 1 — départ Parking Buferrera / Lacs Enol (voiture laissée là, mercredi matin)
-const buferrera     = [43.276879, -4.986047];
-const casaPastores  = [43.268730, -4.998189]; // nuit rando 1 — non utilisé cette fois
-const vegarredonda  = [43.234362, -4.992793]; // nuit mercredi
-const vegaArio      = [43.243022, -4.923002]; // nuit jeudi
-
-// Nuit 5-6 — Las Arenas de Cabrales (vendredi + samedi)
-const lasArenas     = [43.3034, -4.8147];
-
-// Rando 3 — parking Jito de Escarandi (dimanche matin)
-const escarandi     = [43.237111, -4.718750]; // parking donné par l'utilisateur
-const casetondAndara = [43.2140, -4.7121];    // Refuge Casetón de Andara, 1725m
-
-// Côte
-const llanes        = [43.4197, -4.7558];
-const sanVicente    = [43.3908, -4.3930];
-const noja          = [43.4825, -3.5430];
-
-// Gorges du Cares — Caín de Valdeón (départ côté León) et Poncebos (arrivée côté Asturias)
-const cain          = [43.213138, -4.905037];
-const poncebos      = [43.252650, -4.858200];
+const escarandi      = [43.237098, -4.718821];
+const casetondAndara = [43.214053, -4.712178];
+const cain           = [43.213138, -4.905037];
+const cainRando      = [43.213541, -4.905429];
+const pont           = [43.227340, -4.894720];
+const poncebos       = [43.252650, -4.858200];
+const cangasDeOnis   = [43.3487,   -5.0491];
+const buferrera      = [43.276879, -4.986047];
+const vegarredonda   = [43.234362, -4.992793];
+const vegaArio       = [43.243022, -4.923002];
+const lasArenas      = [43.3034,   -4.8147];
+const llanes         = [43.4197,   -4.7558];
+const sanVicente     = [43.3908,   -4.3930];
+const noja           = [43.4825,   -3.5430];
+const fuenteVao      = [43.229620, -4.672720];
 
 const K1 = 'https://www.komoot.com/fr-fr/tour/2950840852?share_token=aIXSeQ5zpNmURq0GrTix7dawfI97hyv0YVnKng8SSXpcIJpbri&ref=wtd';
 const K2 = 'https://www.komoot.com/fr-fr/tour/2950954245?share_token=aH2jU6ALHZsX4zKFKlYmzTOV1XkZuUgfut8WGeNWFq9KZJ8OM4&ref=wtd';
 
-// ── NUITS ──────────────────────────────────────────────────────────────────────
-addEtape(devaTermal, 'Pozas Termales del Río Deva', 'Lun 15 juin — stop journée',
-  'N-621, La Hermida, Cantabria\nSources thermales ~40-50°C sur les berges du Deva',
-  gmaps('Pozas Termales Rio Deva La Hermida Cantabria'));
+// Markers fixes (parkings)
+[[buferrera,'🅿 R1'],[cain,'🅿 Gorges'],[escarandi,'🅿 Andara']]
+  .forEach(([c,t])=>L.marker(c,{icon:labelIcon(t),interactive:false}).addTo(map));
 
-addNuit(valdeon, 'Hotel Cumbres de Valdeón', ['Lun 15 juin'],
-  'Cam. a Soto km 14, Posada de Valdeón, León\n🚗 Arrivée depuis Auray', null,
-  'Hotel Cumbres de Valdeón Posada de Valdeón León');
+// Départs rando fixes
+function addDepart(c,label,info,mapsQ,k) {
+  L.marker(c,{icon:departIcon()}).addTo(map).bindPopup(mkPopup('▲ '+label,'',info,mapsQ,k),{maxWidth:270});
+}
+addDepart(escarandi,'Parking Hoyo del Tejo','Départ Andara · 3,56km · +430m · 1h24','Jito de Escarandi parking Sotres Cantabria');
+addDepart(cain,'Départ Gorges du Cares','Caín de Valdeón · Aller-retour ↔ Pont · 6,86km · 3h59','Cain de Valdeon León',K2);
+addDepart(buferrera,'Parking Buferrera','Lagos de Covadonga · Départ Rando 1\nVegarredonda → Vega de Ario','Parking Buferrera Lagos Covadonga',K1);
 
-addNuit(elTrasgu, 'Hotel El Trasgu', ['Mar 16 juin'],
-  'La Venta, 1 · 33589 Cangas de Onís, Asturias\n🚗 Après gorges du Cares', null,
-  'Hotel El Trasgu La Venta Cangas de Onis');
+// ── JOURNÉES ───────────────────────────────────────────────────────────────────
+// Chaque journée : { date, label, segments[] }
+// segment : { type:'car'|'rando', pts, stats?, markers? }
 
-addNuit(vegarredonda, 'Vegarredonda', ['Mer 17 juin'],
-  '1 460 m · Picos de Europa\n🥾 Depuis Buferrera (Rando 1 J1)', K1,
-  'Refugio Vegarredonda Picos de Europa Asturias');
-
-addNuit(vegaArio, 'Vega de Ario', ['Jeu 18 juin'],
-  '1 630 m · Onís, Asturias\n🥾 Depuis Vegarredonda (Rando 1 J2)', K1,
-  'Refugio Vega de Ario Onis Asturias');
-
-addNuit(lasArenas, 'Las Arenas', ['Ven 19 juin', 'Sam 20 juin'],
-  '33554 Cabrales, Asturias\n🚗 Retour voiture depuis Buferrera · Week-end libre', null,
-  'Las Arenas de Cabrales Asturias');
-
-addNuit(casetondAndara, 'Casetón de Andara', ['Dim 21 juin'],
-  '1 725 m · Massif Oriental, Cantabria\n🥾 Depuis parking Jito de Escarandi\n📞 671 40 42 77', null,
-  'Refugio Caseton de Andara Picos de Europa');
-
-addNuit(llanes, 'Llanes', ['Lun 22 juin', 'Mar 23 juin'],
-  'Côte cantabrique · Asturias\n🚗 Retour voiture depuis Escarandi', null,
-  'Llanes Asturias');
-
-addNuit(sanVicente, 'San Vicente de la Barquera', ['Mer 24 juin', 'Jeu 25 juin'],
-  'Côte cantabrique · Cantabria', null,
-  'San Vicente de la Barquera Cantabria');
-
-addNuit(noja, 'Noja', ['Ven 26 juin', 'Sam 27 juin'],
-  'Côte cantabrique · Cantabria', null,
-  'Noja Cantabria');
-
-// ── DÉPARTS RANDO ──────────────────────────────────────────────────────────────
-addDepart(buferrera, 'Départ Rando 1 — Parking Buferrera',
-  'Lagos de Covadonga, Cangas de Onís\nBoucle 2 jours · Buferrera → Vegarredonda → Vega de Ario',
-  gmaps('Parking Buferrera Lagos de Covadonga Cangas de Onis'), K1);
-
-addDepart(cain, 'Départ Gorges du Cares — Caín de Valdeón',
-  'Caín de Valdeón, León · Départ côté sud\nAller-retour Caín ↔ Poncebos · ~22 km · 5-6h',
-  gmaps('Caín de Valdeón León'), K2);
-
-addDepart(escarandi, 'Départ Rando — Jito de Escarandi',
-  'Parking Jito de Escarandi · Sotres/Tresviso\nMontée Casetón de Andara · 6,8 km · +450 m · ~2h45',
-  gmaps('Jito de Escarandi parking Sotres Cantabria'), null);
-
-// Labels parkings
-[
-  [buferrera,  '🅿 R1'],
-  [cain,       '🅿 Gorges'],
-  [escarandi,  '🅿 Andara'],
-].forEach(([c,t]) => L.marker(c, {icon: labelIcon(t), interactive:false}).addTo(map));
-
-// ── RANDO 1 — Buferrera → Vegarredonda → Vega de Ario → retour ────────────────
-const rando1 = [
-  [43.276879, -4.986047], // A — Buferrera
-  [43.268730, -4.998189], // Casa de Pastores (étape)
-  [43.234362, -4.992793], // Vegarredonda (nuit 1)
-  [43.243022, -4.923002], // Vega de Ario (nuit 2)
-  [43.276879, -4.986047], // B — retour Buferrera
+const DAYS = [
+  {
+    date: 'Lun 13 juil', label: '🚗 Frontière → Escarandi  🥾 Rando Andara',
+    bounds: [[43.07,-5.15],[43.52,-3.45]],
+    segments: [
+      { type:'car',   pts:[[43.3867,-1.6630], escarandi] },
+      { type:'rando', pts:[escarandi, casetondAndara],
+        statMid: [(escarandi[0]+casetondAndara[0])/2+0.004, (escarandi[1]+casetondAndara[1])/2-0.015],
+        stat: '3,56 km · 1h24<br>▲+430m ▼0m',
+        markers: [() => L.marker(casetondAndara,{icon:nuitIcon('Casetón de Andara',['Lun 13 juil'])})
+          .addTo(map).bindPopup(mkPopup('Casetón de Andara','Lun 13 juil','1 725m · Massif Oriental\n📞 671 40 42 77','Refugio Caseton de Andara Picos de Europa'))] },
+    ]
+  },
+  {
+    date: 'Mar 14 juil 🇫🇷⚽', label: '🥾 Retour Andara  🚗 → Caín',
+    bounds: null,
+    segments: [
+      { type:'rando', pts:[casetondAndara, fuenteVao, escarandi],
+        statMid: [(fuenteVao[0]+escarandi[0])/2, (fuenteVao[1]+escarandi[1])/2],
+        stat: '12 km · 3h38<br>▲+230m ▼-670m' },
+      { type:'car',   pts:[escarandi, cain],
+        markers: [() => L.marker(cain,{icon:nuitIcon('Caín de Valdeón',['Mar 14 🇫🇷⚽','Mer 15 🇫🇷⚽'])})
+          .addTo(map).bindPopup(mkPopup('Caín de Valdeón','Mar 14 – Mer 15 juil 🇫🇷⚽','📺 Demi-finales ces soirs !','Cain de Valdeon León'))] },
+    ]
+  },
+  {
+    date: 'Mer 15 juil 🇫🇷⚽', label: '🥾 Gorges du Cares  🚗 → Cangas de Onís',
+    bounds: null,
+    segments: [
+      { type:'rando', pts:[cainRando, pont, cainRando],
+        statMid: [43.223, -4.896],
+        stat: '6,86 km · 3h59<br>▲+670m ▼-680m' },
+      { type:'car', pts:[cain,[43.1800,-4.9800],[43.2600,-5.0600],cangasDeOnis],
+        markers: [() => L.marker(cangasDeOnis,{icon:nuitIcon('Cangas de Onís',['Mer 15 🇫🇷⚽'])})
+          .addTo(map).bindPopup(mkPopup('Cangas de Onís','Mer 15 juil 🇫🇷⚽','📺 Demi-finale ce soir !','Cangas de Onis Asturias'))] },
+    ]
+  },
+  {
+    date: 'Jeu 16 juil', label: '🚗 Cangas → Buferrera  🥾 Buferrera → Vegarredonda',
+    bounds: null,
+    segments: [
+      { type:'car',   pts:[cangasDeOnis, buferrera] },
+      { type:'rando', pts:[buferrera, vegarredonda],
+        statMid: [(buferrera[0]+vegarredonda[0])/2, (buferrera[1]+vegarredonda[1])/2],
+        stat: '8,62 km · 3h02<br>▲+500m ▼-50m',
+        markers: [() => L.marker(vegarredonda,{icon:nuitIcon('Vegarredonda',['Jeu 16 juil'])})
+          .addTo(map).bindPopup(mkPopup('Vegarredonda','Jeu 16 juil','1 460m · Picos de Europa','Refugio Vegarredonda Picos de Europa Asturias',K1))] },
+    ]
+  },
+  {
+    date: 'Ven 17 juil', label: '🥾 Vegarredonda → Vega de Ario',
+    bounds: null,
+    segments: [
+      { type:'rando', pts:[vegarredonda, vegaArio],
+        statMid: [(vegarredonda[0]+vegaArio[0])/2, (vegarredonda[1]+vegaArio[1])/2],
+        stat: '8,17 km · 3h51<br>▲+450m ▼-310m',
+        markers: [() => L.marker(vegaArio,{icon:nuitIcon('Vega de Ario',['Ven 17 juil'])})
+          .addTo(map).bindPopup(mkPopup('Vega de Ario','Ven 17 juil','1 630m · Onís, Asturias','Refugio Vega de Ario Onis Asturias',K1))] },
+    ]
+  },
+  {
+    date: 'Sam 18 juil', label: '🥾 Vega de Ario → Buferrera  🚗 → Las Arenas',
+    bounds: null,
+    segments: [
+      { type:'rando', pts:[vegaArio, buferrera],
+        statMid: [(vegaArio[0]+buferrera[0])/2+0.005, (vegaArio[1]+buferrera[1])/2],
+        stat: '8 km · 3h<br>▲+70m ▼-650m' },
+      { type:'car',   pts:[buferrera, lasArenas],
+        markers: [() => L.marker(lasArenas,{icon:nuitIcon('Las Arenas',['Sam 18','Dim 19 🏆'])})
+          .addTo(map).bindPopup(mkPopup('Las Arenas de Cabrales','Sam 18 – Dim 19 juil','📺 Finale Coupe du Monde le 19 !','Las Arenas de Cabrales Asturias'))] },
+    ]
+  },
+  {
+    date: 'Lun 20 juil', label: '🚗 Las Arenas → Llanes',
+    bounds: [[43.25,-4.90],[43.50,-4.65]],
+    segments: [
+      { type:'car', pts:[lasArenas, llanes],
+        markers: [() => L.marker(llanes,{icon:nuitIcon('Llanes',['Lun 20','Mar 21 juil'])})
+          .addTo(map).bindPopup(mkPopup('Llanes','Lun 20 – Mar 21 juil','Côte cantabrique · Asturias','Llanes Asturias'))] },
+    ]
+  },
+  {
+    date: 'Mer 22 juil', label: '🚗 Llanes → San Vicente de la Barquera',
+    bounds: [[43.30,-4.90],[43.50,-4.25]],
+    segments: [
+      { type:'car', pts:[llanes, sanVicente],
+        markers: [() => L.marker(sanVicente,{icon:nuitIcon('San Vicente',['Mer 22','Jeu 23 juil'])})
+          .addTo(map).bindPopup(mkPopup('San Vicente de la Barquera','Mer 22 – Jeu 23 juil','Côte cantabrique · Cantabria','San Vicente de la Barquera Cantabria'))] },
+    ]
+  },
+  {
+    date: 'Ven 24 juil', label: '🚗 San Vicente → Noja',
+    bounds: [[43.35,-4.50],[43.55,-3.40]],
+    segments: [
+      { type:'car', pts:[sanVicente, noja],
+        markers: [() => L.marker(noja,{icon:nuitIcon('Noja',['Ven 24','Sam 25 juil'])})
+          .addTo(map).bindPopup(mkPopup('Noja','Ven 24 – Sam 25 juil','Côte cantabrique · Cantabria','Noja Cantabria'))] },
+    ]
+  },
 ];
-L.polyline(rando1, { color:'#e8630a', weight:4, opacity:1 }).addTo(map)
-  .bindTooltip('🥾 Rando 1 — Buferrera · Vegarredonda · Vega de Ario (2 nuits)');
 
-// ── GORGES DU CARES — Caín (sud) ↔ Poncebos (nord) ───────────────────────────
-const cares = [
-  [43.213138, -4.905037], // Caín (départ sud)
-  [43.216000, -4.898000],
-  [43.222000, -4.893000],
-  [43.229000, -4.888000],
-  [43.236000, -4.882000],
-  [43.242000, -4.876000],
-  [43.248000, -4.868000],
-  [43.252650, -4.858200], // Poncebos (arrivée nord)
-];
-L.polyline(cares, { color:'#e8630a', weight:4, opacity:1 }).addTo(map)
-  .bindTooltip('🥾 Gorges du Cares — Caín ↔ Poncebos (~11 km aller, retour par le même chemin)');
+// ── MOTEUR ─────────────────────────────────────────────────────────────────────
+let currentDay = 0;
+let animating  = false;
+let animTimeout = null;
+const drawnLayers = [];
 
-// ── RANDO ANDARA — Escarandi → Casetón de Andara ──────────────────────────────
-const randoAndara = [
-  [43.237111, -4.718750], // Parking Escarandi
-  [43.230000, -4.722000],
-  [43.224000, -4.718000],
-  [43.218000, -4.714000],
-  [43.214000, -4.712100], // Casetón de Andara
-];
-L.polyline(randoAndara, { color:'#e8630a', weight:4, opacity:1 }).addTo(map)
-  .bindTooltip('🥾 Rando Andara — Escarandi → Casetón de Andara (6,8 km · +450 m)');
+const nextBtn     = document.getElementById('nextBtn');
+const prevBtn     = document.getElementById('prevBtn');
+const dayLabel    = document.getElementById('dayLabel');
+const progressBar = document.getElementById('progressBar');
 
-// ── ROUTES VOITURE via OSRM ───────────────────────────────────────────────────
-const carStyle = { color:'#1a6fcc', weight:3, opacity:0.9, dashArray:'12 6' };
-
-const status = document.getElementById('status');
-status.style.display = 'block';
-
-async function drawRoute(waypoints, tooltip, style) {
-  const coords = waypoints.map(w => w[1]+','+w[0]).join(';');
+async function fetchRoute(pts) {
+  const coords = pts.map(w=>w[1]+','+w[0]).join(';');
   const url = `https://router.project-osrm.org/route/v1/driving/${coords}?overview=full&geometries=geojson`;
   try {
-    const r = await fetch(url);
-    const d = await r.json();
-    if (d.routes && d.routes[0]) {
-      const latlngs = d.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-      L.polyline(latlngs, style||carStyle).addTo(map).bindTooltip(tooltip);
-      return;
-    }
+    const r = await fetch(url); const d = await r.json();
+    if (d.routes?.[0]) return d.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
   } catch(e) {}
-  L.polyline(waypoints, {...(style||carStyle), dashArray:'5 5', opacity:0.4}).addTo(map).bindTooltip(tooltip + ' (approx)');
+  return pts;
 }
 
-Promise.all([
-  // Lundi : arrivée → stop Thermes Deva → Hotel Valdeón
-  drawRoute([[43.3867, -1.6630], devaTermal, valdeon], '🚗 Lun · Arrivée → Thermes Deva → Hotel Cumbres de Valdeón'),
-  // Mardi matin : El Trasgu → Caín de Valdeón (départ gorges côté León)
-  drawRoute([elTrasgu, cain], '🚗 Mar matin · Hotel El Trasgu → Caín de Valdeón'),
-  // Mardi après-midi : Caín → Buferrera par l'ouest (via Cangas de Onís / CO-4)
-  drawRoute([cain, [43.3487, -5.1291], buferrera], '🚗 Mar après-midi · Caín → Buferrera (via Cangas de Onís)'),
-  // Vendredi : Buferrera → Las Arenas (fin rando 1)
-  drawRoute([buferrera, lasArenas], '🚗 Ven · Buferrera → Las Arenas de Cabrales'),
-  // Dimanche matin : Las Arenas → parking Escarandi
-  drawRoute([lasArenas, escarandi], '🚗 Dim · Las Arenas → Parking Escarandi (Andara)'),
-  // Lundi : Escarandi → Llanes (côte)
-  drawRoute([escarandi, llanes], '🚗 Lun · Escarandi → Llanes'),
-  // Côte
-  drawRoute([llanes, sanVicente], '🚗 Côte · Llanes → San Vicente de la Barquera'),
-  drawRoute([sanVicente, noja], '🚗 Côte · San Vicente → Noja'),
-]).then(() => { status.style.display = 'none'; });
+function animPoly(latlngs, style, onDone) {
+  const pl = L.polyline([], style).addTo(map);
+  drawnLayers.push(pl);
+  let i = 0;
+  const step = Math.max(1, Math.floor(latlngs.length / 60));
+  function tick() {
+    i += step;
+    if (i >= latlngs.length) { pl.setLatLngs(latlngs); onDone(); return; }
+    pl.setLatLngs(latlngs.slice(0, i));
+    animTimeout = setTimeout(tick, 25);
+  }
+  tick();
+}
 
-// Fit bounds — zone complète
-map.fitBounds([[43.07,-5.15],[43.55,-3.45]]);
+// Dessine un segment instantanément (sans animation), retourne une Promise
+async function drawSegmentInstant(seg) {
+  const latlngs = seg.type === 'car' ? await fetchRoute(seg.pts) : seg.pts;
+  const style = seg.type === 'car'
+    ? {color:'#666', weight:2.5, opacity:0.7, dashArray:'6 5'}
+    : {color:'#e8630a', weight:4, opacity:0.9};
+  const pl = L.polyline(latlngs, style).addTo(map);
+  drawnLayers.push(pl);
+  if (seg.stat && seg.statMid) {
+    const lbl = L.marker(seg.statMid, {icon:statIcon(seg.stat), interactive:false, zIndexOffset:500}).addTo(map);
+    drawnLayers.push(lbl);
+  }
+  if (seg.markers) seg.markers.forEach(fn => { const m = fn(); if(m) drawnLayers.push(m); });
+}
+
+async function runSegments(segs, idx, onDone) {
+  if (idx >= segs.length) { onDone(); return; }
+  const seg = segs[idx];
+  const latlngs = seg.type === 'car' ? await fetchRoute(seg.pts) : seg.pts;
+  const style = seg.type === 'car'
+    ? {color:'#666', weight:2.5, opacity:0.7, dashArray:'6 5'}
+    : {color:'#e8630a', weight:4, opacity:0.9};
+
+  animPoly(latlngs, style, () => {
+    if (seg.stat && seg.statMid) {
+      const lbl = L.marker(seg.statMid, {icon:statIcon(seg.stat), interactive:false, zIndexOffset:500}).addTo(map);
+      drawnLayers.push(lbl);
+    }
+    if (seg.markers) seg.markers.forEach(fn => { const m = fn(); if(m) drawnLayers.push(m); });
+    animTimeout = setTimeout(() => runSegments(segs, idx+1, onDone), 300);
+  });
+}
+
+function updateButtons() {
+  prevBtn.disabled = (currentDay <= 0);
+  nextBtn.disabled = (currentDay >= DAYS.length);
+}
+
+async function playDay(idx) {
+  if (idx >= DAYS.length) {
+    dayLabel.textContent = '✅ Fin du voyage !';
+    progressBar.style.width = '100%';
+    animating = false;
+    updateButtons();
+    return;
+  }
+  animating = true;
+  nextBtn.disabled = true;
+  prevBtn.disabled = true;
+  const day = DAYS[idx];
+  dayLabel.textContent = `📅 ${day.date} — ${day.label}`;
+  progressBar.style.width = ((idx / DAYS.length) * 100) + '%';
+
+  if (idx === 0) {
+    map.fitBounds([[43.07,-5.15],[43.52,-3.45]]);
+  } else if (day.bounds) {
+    map.fitBounds(day.bounds, {animate:true, duration:0.6});
+  }
+
+  await runSegments(day.segments, 0, () => {
+    animating = false;
+    currentDay = idx + 1;
+    updateButtons();
+  });
+}
+
+// Redessine tous les jours jusqu'à targetDay (exclu) instantanément, puis animate targetDay
+async function goToDay(targetIdx) {
+  clearTimeout(animTimeout);
+  animating = false;
+  drawnLayers.forEach(l => map.removeLayer(l));
+  drawnLayers.length = 0;
+  currentDay = 0;
+
+  if (targetIdx <= 0) {
+    dayLabel.textContent = 'Clic pour démarrer le voyage';
+    progressBar.style.width = '0%';
+    map.fitBounds([[43.07,-5.15],[43.52,-3.45]]);
+    updateButtons();
+    return;
+  }
+
+  // Redessine les jours 0..targetIdx-1 instantanément
+  for (let i = 0; i < targetIdx; i++) {
+    for (const seg of DAYS[i].segments) {
+      await drawSegmentInstant(seg);
+    }
+  }
+  currentDay = targetIdx;
+
+  // Affiche l'état du jour targetIdx-1 (le dernier dessiné)
+  const lastDay = DAYS[targetIdx - 1];
+  dayLabel.textContent = `📅 ${lastDay.date} — ${lastDay.label}`;
+  progressBar.style.width = ((targetIdx / DAYS.length) * 100) + '%';
+
+  if (lastDay.bounds) {
+    map.fitBounds(lastDay.bounds, {animate:false});
+  } else if (targetIdx === 1) {
+    map.fitBounds([[43.07,-5.15],[43.52,-3.45]]);
+  }
+
+  updateButtons();
+}
+
+nextBtn.addEventListener('click', () => {
+  if (!animating) playDay(currentDay);
+});
+
+prevBtn.addEventListener('click', () => {
+  if (!animating) goToDay(currentDay - 1);
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  goToDay(0);
+  nextBtn.textContent = '▶ Jour suivant';
+  dayLabel.textContent = 'Clic pour démarrer le voyage';
+});
+
+updateButtons();
+
+map.fitBounds([[43.07,-5.15],[43.52,-3.45]]);
 </script>
 </body>
 </html>
