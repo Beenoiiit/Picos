@@ -18,15 +18,18 @@
     bottom: 44px; left: 50%;
     transform: translateX(-50%);
     z-index: 1000;
-    display: flex; align-items: center; gap: 10px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
     background: rgba(255,255,255,0.96);
-    border-radius: 30px;
-    padding: 7px 16px;
+    border-radius: 16px;
+    padding: 8px 14px;
     box-shadow: 0 2px 12px rgba(0,0,0,0.25);
   }
+  #controlsTop {
+    display: flex; align-items: center; gap: 8px;
+  }
   #nextBtn, #prevBtn {
-    padding: 6px 14px; border-radius: 20px; border: none;
-    background: #2d5a27; color: white; font-size: 0.85rem;
+    padding: 5px 12px; border-radius: 16px; border: none;
+    background: #2d5a27; color: white; font-size: 0.82rem;
     font-weight: 600; cursor: pointer; white-space: nowrap;
   }
   #nextBtn:hover, #prevBtn:hover { background: #3a7a34; }
@@ -37,16 +40,28 @@
   }
   #resetBtn:hover { color: #333; }
   #dayLabel {
-    font-size: 0.82rem; font-weight: 600; color: #333;
-    min-width: 220px; text-align: center;
+    font-size: 0.78rem; font-weight: 600; color: #333;
+    min-width: 200px; text-align: center;
   }
-  #progress { width: 100px; height: 4px; background: #ddd; border-radius: 2px; overflow: hidden; }
+  #progress { width: 90px; height: 3px; background: #ddd; border-radius: 2px; overflow: hidden; }
   #progressBar { height: 100%; background: #2d5a27; border-radius: 2px; transition: width 0.4s; width: 0%; }
 
+  #dayButtons {
+    display: flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: center;
+    border-top: 1px solid #eee; padding-top: 5px; width: 100%;
+  }
+  .dayBtn {
+    padding: 2px 7px; border-radius: 10px; border: 1px solid #ccc;
+    background: white; color: #555; font-size: 0.68rem;
+    font-weight: 600; cursor: pointer; white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+  }
+  .dayBtn:hover { background: #2d5a27; color: white; border-color: #2d5a27; }
+  .dayBtn.active { background: #2d5a27; color: white; border-color: #2d5a27; }
   #footer {
-    background: white; border-top: 2px solid #ddd;
+    background: white; border-top: 1px solid #e0e0e0;
     padding: 4px 14px; font-size: 0.72rem;
-    display: flex; gap: 10px; align-items: center; flex-wrap: wrap; height: 34px;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap; height: 30px;
   }
   .leg { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
   .dot { width: 11px; height: 11px; border-radius: 50%; border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
@@ -58,11 +73,14 @@
 <div style="position:relative;">
   <div id="map"></div>
   <div id="controls">
-    <button id="prevBtn">◀</button>
-    <button id="nextBtn">▶ Jour suivant</button>
-    <div id="dayLabel">Clic pour démarrer le voyage</div>
-    <div id="progress"><div id="progressBar"></div></div>
-    <button id="resetBtn" title="Recommencer">↺</button>
+    <div id="controlsTop">
+      <button id="prevBtn">◀</button>
+      <button id="nextBtn">▶ Jour suivant</button>
+      <div id="dayLabel">Clic pour démarrer</div>
+      <div id="progress"><div id="progressBar"></div></div>
+      <button id="resetBtn" title="Recommencer">↺</button>
+    </div>
+    <div id="dayButtons"></div>
   </div>
 </div>
 <div id="footer">
@@ -156,7 +174,7 @@ addDepart(buferrera,'Parking Buferrera','Lagos de Covadonga · Départ Rando 1\n
 
 const DAYS = [
   {
-    date: 'Lun 13 juil', label: '🚗 Frontière → Escarandi  🥾 Rando Andara',
+    date: 'Lun 13 juil', short: 'Lun 13', label: '🚗 Frontière → Escarandi  🥾 Rando Andara',
     bounds: [[43.07,-5.15],[43.52,-3.45]],
     segments: [
       { type:'car',   pts:[[43.3867,-1.6630], escarandi] },
@@ -168,19 +186,19 @@ const DAYS = [
     ]
   },
   {
-    date: 'Mar 14 juil 🇫🇷⚽', label: '🥾 Retour Andara  🚗 → Caín',
+    date: 'Mar 14 juil 🇫🇷⚽', short: 'Mar 14', label: '🥾 Retour Andara  🚗 → Caín',
     bounds: null,
     segments: [
       { type:'rando', pts:[casetondAndara, fuenteVao, escarandi],
         statMid: [(fuenteVao[0]+escarandi[0])/2, (fuenteVao[1]+escarandi[1])/2],
         stat: '12 km · 3h38<br>▲+230m ▼-670m' },
       { type:'car',   pts:[escarandi, cain],
-        markers: [() => L.marker(cain,{icon:nuitIcon('Caín de Valdeón',['Mar 14 🇫🇷⚽','Mer 15 🇫🇷⚽'])})
-          .addTo(map).bindPopup(mkPopup('Caín de Valdeón','Mar 14 – Mer 15 juil 🇫🇷⚽','📺 Demi-finales ces soirs !','Cain de Valdeon León'))] },
+        markers: [() => L.marker(cain,{icon:nuitIcon('Caín de Valdeón',['Mar 14 🇫🇷⚽'])})
+          .addTo(map).bindPopup(mkPopup('Caín de Valdeón','Mar 14 juil 🇫🇷⚽','📺 Demi-finale ce soir !','Cain de Valdeon León'))] },
     ]
   },
   {
-    date: 'Mer 15 juil 🇫🇷⚽', label: '🥾 Gorges du Cares  🚗 → Cangas de Onís',
+    date: 'Mer 15 juil 🇫🇷⚽', short: 'Mer 15', label: '🥾 Gorges du Cares  🚗 → Cangas de Onís',
     bounds: null,
     segments: [
       { type:'rando', pts:[cainRando, pont, cainRando],
@@ -192,7 +210,7 @@ const DAYS = [
     ]
   },
   {
-    date: 'Jeu 16 juil', label: '🚗 Cangas → Buferrera  🥾 Buferrera → Vegarredonda',
+    date: 'Jeu 16 juil', short: 'Jeu 16', label: '🚗 Cangas → Buferrera  🥾 Buferrera → Vegarredonda',
     bounds: null,
     segments: [
       { type:'car',   pts:[cangasDeOnis, buferrera] },
@@ -204,7 +222,7 @@ const DAYS = [
     ]
   },
   {
-    date: 'Ven 17 juil', label: '🥾 Vegarredonda → Vega de Ario',
+    date: 'Ven 17 juil', short: 'Ven 17', label: '🥾 Vegarredonda → Vega de Ario',
     bounds: null,
     segments: [
       { type:'rando', pts:[vegarredonda, vegaArio],
@@ -215,7 +233,7 @@ const DAYS = [
     ]
   },
   {
-    date: 'Sam 18 juil', label: '🥾 Vega de Ario → Buferrera  🚗 → Las Arenas',
+    date: 'Sam 18 juil', short: 'Sam 18', label: '🥾 Vega de Ario → Buferrera  🚗 → Las Arenas',
     bounds: null,
     segments: [
       { type:'rando', pts:[vegaArio, buferrera],
@@ -227,7 +245,7 @@ const DAYS = [
     ]
   },
   {
-    date: 'Lun 20 juil', label: '🚗 Las Arenas → Llanes',
+    date: 'Lun 20 juil', short: 'Lun 20', label: '🚗 Las Arenas → Llanes',
     bounds: [[43.25,-4.90],[43.50,-4.65]],
     segments: [
       { type:'car', pts:[lasArenas, llanes],
@@ -236,7 +254,7 @@ const DAYS = [
     ]
   },
   {
-    date: 'Mer 22 juil', label: '🚗 Llanes → San Vicente de la Barquera',
+    date: 'Mer 22 juil', short: 'Mer 22', label: '🚗 Llanes → San Vicente de la Barquera',
     bounds: [[43.30,-4.90],[43.50,-4.25]],
     segments: [
       { type:'car', pts:[llanes, sanVicente],
@@ -245,7 +263,7 @@ const DAYS = [
     ]
   },
   {
-    date: 'Ven 24 juil', label: '🚗 San Vicente → Noja',
+    date: 'Ven 24 juil', short: 'Ven 24', label: '🚗 San Vicente → Noja',
     bounds: [[43.35,-4.50],[43.55,-3.40]],
     segments: [
       { type:'car', pts:[sanVicente, noja],
@@ -326,6 +344,9 @@ async function runSegments(segs, idx, onDone) {
 function updateButtons() {
   prevBtn.disabled = (currentDay <= 0);
   nextBtn.disabled = (currentDay >= DAYS.length);
+  if (typeof dayBtns !== 'undefined') {
+    dayBtns.forEach((btn, i) => btn.classList.toggle('active', i < currentDay));
+  }
 }
 
 async function playDay(idx) {
@@ -406,6 +427,22 @@ document.getElementById('resetBtn').addEventListener('click', () => {
   goToDay(0);
   nextBtn.textContent = '▶ Jour suivant';
   dayLabel.textContent = 'Clic pour démarrer le voyage';
+});
+
+// ── BOUTONS DE NAVIGATION PAR JOUR ─────────────────────────────────────────
+const dayButtonsContainer = document.getElementById('dayButtons');
+const dayBtns = [];
+
+DAYS.forEach((day, i) => {
+  const btn = document.createElement('button');
+  btn.className = 'dayBtn';
+  btn.textContent = day.short;
+  btn.title = day.label;
+  btn.addEventListener('click', () => {
+    if (!animating) goToDay(i + 1);
+  });
+  dayBtns.push(btn);
+  dayButtonsContainer.appendChild(btn);
 });
 
 updateButtons();
